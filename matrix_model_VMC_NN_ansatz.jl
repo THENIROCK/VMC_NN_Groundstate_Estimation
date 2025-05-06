@@ -59,7 +59,7 @@ begin
 
     # Define a trainable neural‐network ansatz
     struct Ansatz
-        net::Chain    # maps ℝ³ → ℝ (gives log|ψ|² up to additive const)
+        net::Chain # maps ℝ³ → ℝ (gives log|ψ|² up to additive const)
     end
     Functors.@functor Ansatz
 
@@ -79,37 +79,9 @@ begin
         b = real(X1[2,2])
         c = imag(X2[1,2])
         x = [a, b, c]
-        return ans.net(x)[1]     # this is log |ψ|^2 up to a constant
+        return ans.net(x)[1] # this is log |ψ|^2 up to a constant
     end
 end
-
-
-# ╔═╡ 13271093-70c0-469f-958b-3c02d19db856
-# ### Variational ansatz: Gaussian on fuzzy‑sphere radius
-# begin
-#     struct Ansatz
-# 		# two variational parameters:
-#         r0::Float64   # target radius
-#         σ::Float64    # width of Gaussian
-#     end
-
-# 	Functors.@functor Ansatz
-# end
-
-
-
-# ╔═╡ b715d2a6-4644-47e9-a4ca-800ebb8abce7
-# ### Map ansatz → wavefunction probability |ψ|^2 ∝ exp(- (r(X)-r0)^2 / σ^2)
-# begin
-#     function radius(X1, X2, X3)
-#         return sqrt(real(tr(X1^2 + X2^2 + X3^2))/2)
-#     end
-#     function logp(ans::Ansatz, X1, X2, X3)
-#         r = radius(X1, X2, X3)
-#         return -((r - ans.r0)^2)/(ans.σ^2)
-#     end
-# end
-
 
 
 # ╔═╡ 610b509e-4399-4264-a248-1246ff121cc0
@@ -160,23 +132,27 @@ begin
             X2 = [0     im*c;
                   -im*c  0]
 
-			# X3 = Diagonal([d, -d])      # traceless
+			# X3 = Diagonal([d, -d]) # traceless
 			
             X3 = zeros(2,2)
 
-            # compute ansatz log-prob and weight
+            # compute ansatz unnormalizaed log-prob and importance weight
             lp = logp(ans, X1, X2, X3)
             w  = exp(lp)
 
             #local energy = kinetic + potential
-            # E_loc = local_kinetic(ans, a, b, c) + HB(X1, X2, X3, ν)
-			E_loc = HB(X1, X2, X3, ν)
-
-            sum_wE += w * E_loc
-            sum_w  += w
+            E_loc = local_kinetic(ans, a, b, c) + HB(X1, X2, X3, ν)
+			# E_loc = HB(X1, X2, X3, ν)
+			
+			# sum the numerator and denominator of ⟨H⟩ for VMC
+            sum_wE += w * E_loc #numerator
+            sum_w  += w #denominator
         end
 
-        return sum_wE / sum_w
+		# weighted average ⟨H⟩ ≈ ∑ w_i E_loc(i) / ∑ w_i
+        return sum_wE / sum_w 
+
+		# I use this weighted VMC to normalize ψ but Han and Hartnoll use a normalizign-flow neural network (normalized by default.)
     end
 end
 
@@ -197,7 +173,7 @@ begin
 	full_ans = f64(Ansatz(8))
     ans  = f64(full_ans.net)              # 3→64→64→1 MLP
     ps   = Flux.params(ans)     # collect the arrays inside ans.net
-	epochs = 400
+	epochs = 200
     data = 1:epochs                   # 100 “epochs of training
 
 	losses = Float64[]
@@ -221,7 +197,7 @@ begin
 	end
 
     @info "Final ⟨H⟩ = $(round(energy(full_ans, ν; nsamples=200), digits=4))"
-	println(losses)
+	# println(losses)
 end
 
 
@@ -237,23 +213,35 @@ plot(
 
 # ╔═╡ d49d6101-5267-43ea-b6ed-8de2f35557b6
 begin
-    # ranges for r₀ and σ
-    r_vals = range(0.5, 2.0, length=40)
-    σ_vals = range(0.1, 1.0, length=40)
 
-    # build the energy grid: E[i,j] = energy at (r_vals[j], σ_vals[i])
-    E = [energy(Ansatz(r, s), ν; nsamples=800) for s in σ_vals, r in r_vals]
+	# plot |ψ|² on a slice
+	
+	# pick a,b ranges and resolution
+	as = range(-2, 2, length=200)
+	bs = range(-2, 2, length=200)
+	
+	# evaluate the network on the grid at c=0
+	Z = [full_ans.net([a,b,0])[1] for b in bs, a in as ]
+	
+	# heatmap of log-probability
+	heatmap(
+		as, bs, Z;
+		xlabel="a", ylabel="b",
+		title="log |ψ|² slice (c=0)"
+	)
+end
 
-    # render a 3D surface
-    surface(
-      r_vals, σ_vals, E;
-      xlabel="r₀",
-      ylabel="σ",
-      zlabel="⟨H⟩",
-      title="Variational Energy Surface at ν=$(round(ν, digits=2))",
-      legend=false,
-      camera=(30, 60)
-    )
+
+
+# ╔═╡ 4567b064-7889-419e-b6cd-44c44bcdb305
+begin #unnormalized but that's fine. Normalization is still enforced.
+  P = exp.(Z)  # elementwise
+  heatmap(
+    as, bs, P;
+    xlabel="a", ylabel="b",
+    title="|ψ|² slice (c=0)",
+    colorbar_title="density"
+  )
 end
 
 
@@ -2115,13 +2103,12 @@ version = "1.4.1+2"
 # ╠═3eb0446a-37c4-41ec-bf3a-0db7dde578ba
 # ╠═4e5fda15-3961-4abb-938e-37bf31f1520d
 # ╠═0bd1c788-41a5-42b0-8fe0-a9c70c5f22bb
-# ╠═13271093-70c0-469f-958b-3c02d19db856
-# ╠═b715d2a6-4644-47e9-a4ca-800ebb8abce7
 # ╠═610b509e-4399-4264-a248-1246ff121cc0
 # ╠═ffb3928b-360a-46c3-855a-b51971b3a480
 # ╠═6c1544b1-d2da-4c53-af26-045b9a087d80
 # ╠═ba4264eb-66b1-4934-bf0b-de8ce42d162c
 # ╠═fca5f114-f9b3-40a8-9879-1b7b4b3ad62f
 # ╠═d49d6101-5267-43ea-b6ed-8de2f35557b6
+# ╠═4567b064-7889-419e-b6cd-44c44bcdb305
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
