@@ -169,18 +169,20 @@ end
 begin
 	using ChainRules
 	
-    ### 1) set up your model, params, optimizer, and dummy data
+    ### set up model, params, optimizer, and dummy data
 	full_ans = f64(Ansatz(8))
     ans  = f64(full_ans.net)              # 3→64→64→1 MLP
     ps   = Flux.params(ans)     # collect the arrays inside ans.net
-	epochs = 200
+	epochs = 400
     data = 1:epochs                   # 100 “epochs of training
 
 	losses = Float64[]
+	# --- grid for later plotting (shared globals) ---    
+	snapshots = []
 
 	opt = Flux.Optimise.Adam(0.01) # learningn rate 0.01
 
-    ### 2) define a loss(p, d) that ignores both inputs and returns ⟨H⟩
+    ### define a loss(p, d) that ignores both inputs and returns ⟨H⟩
     function loss(x)
         energy(full_ans, ν; nsamples=1000)
     end
@@ -191,13 +193,15 @@ begin
 	    err = loss(x)
 	    ChainRules.ignore_derivatives() do
 	        push!(losses, err)
+			# record the current model
+        	push!(snapshots, deepcopy(full_ans))
 	    end
-			
+		
 	    return err
 	end
 
     @info "Final ⟨H⟩ = $(round(energy(full_ans, ν; nsamples=200), digits=4))"
-	# println(losses)
+	println(snapshots)
 end
 
 
@@ -211,38 +215,100 @@ plot(
   legend=false
 )
 
-# ╔═╡ d49d6101-5267-43ea-b6ed-8de2f35557b6
+# ╔═╡ 232ee913-9c8f-42d4-a570-c8c77c721683
+# slider to pick an epoch
+epoch_i = @bind epoch_i Slider(1:epochs-1, show_value=true)
+
+# ╔═╡ 4a2ed650-575a-4cfa-b52a-196b1e55a099
 begin
 
-	# plot |ψ|² on a slice
-	
-	# pick a,b ranges and resolution
-	as = range(-2, 2, length=200)
-	bs = range(-2, 2, length=200)
-	
-	# evaluate the network on the grid at c=0
-	Z = [full_ans.net([a,b,0])[1] for b in bs, a in as ]
-	
-	# heatmap of log-probability
-	heatmap(
-		as, bs, Z;
-		xlabel="a", ylabel="b",
-		title="log |ψ|² slice (c=0)"
-	)
+    # pick the snapshot at that epoch
+    cur = snapshots[epoch_i]
+
+	a_range = range(-2,2,length=200)
+    b_range = range(-2,2,length=200)
+
+    # build a matrix of log|ψ|² on the grid (c=0)
+    Zlog = [ logp(cur,
+                 [a 0; 0 b],           # X1
+                 [0 0; 0 0],           # X2 (c=0)
+                 zeros(2,2))           # X3
+             for b in b_range, a in a_range ]
+
+    # exponentiate to get |ψ|²
+    Z = exp.(Zlog)
+
+    # plot it
+    heatmap(
+      a_range, b_range, Z;
+      xlabel="a", ylabel="b",
+      title="|ψ|² at epoch = $epoch_i",
+      colorbar_title="density"
+    )
 end
 
+
+# ╔═╡ d49d6101-5267-43ea-b6ed-8de2f35557b6
+# begin
+
+# 	# plot |ψ|² on a slice
+	
+# 	# pick a,b ranges and resolution
+# 	as_i = range(-2, 2, length=200)
+# 	bs_i = range(-2, 2, length=200)
+	
+# 	# evaluate the network on the grid at c=0
+# 	Z_i = [full_ans.net([a,b,0])[1] for b in bs_i, a in as_i ]
+	
+# 	# heatmap of log-probability
+# 	heatmap(
+# 		as_i, bs_i, Z_i;
+# 		xlabel="a", ylabel="b",
+# 		title="log |ψ|² slice (c=0)"
+# 	)
+# end
+
+
+
+# ╔═╡ 76aca4f9-47da-4065-a55d-f368066d084d
+# begin
+#     # 1) pick a,b ranges
+#     as = range(-2, 2, length=200)
+#     bs = range(-2, 2, length=200)
+
+#     # 2) compute log|ψ|² on the grid at c=0
+#     Zlog = [ logp(full_ans,
+#                   [a  0;   # X1 = diag(a,b)
+#                    0  b],
+#                   [0  0;   # X2 = zero at c=0
+#                    0  0],
+#                   zeros(2,2)
+#                 )
+#              for b in bs, a in as ]
+
+#     # 3) exponentiate to get |ψ|²
+#     Z = exp.(Zlog)
+
+#     # 4) heatmap of the probability density
+#     heatmap(
+#       as, bs, Z;
+#       xlabel="a", ylabel="b",
+#       title="|ψ|² slice (c=0)",
+#       colorbar_title="density"
+#     )
+# end
 
 
 # ╔═╡ 4567b064-7889-419e-b6cd-44c44bcdb305
-begin #unnormalized but that's fine. Normalization is still enforced.
-  P = exp.(Z)  # elementwise
-  heatmap(
-    as, bs, P;
-    xlabel="a", ylabel="b",
-    title="|ψ|² slice (c=0)",
-    colorbar_title="density"
-  )
-end
+# begin #unnormalized but that's fine. Normalization is still enforced.
+#   P_i = exp.(Z_i)  # elementwise
+#   heatmap(
+#     as_i, bs_i, P_i;
+#     xlabel="a", ylabel="b",
+#     title="|ψ|² slice (c=0)",
+#     colorbar_title="density"
+#   )
+# end
 
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -2108,7 +2174,10 @@ version = "1.4.1+2"
 # ╠═6c1544b1-d2da-4c53-af26-045b9a087d80
 # ╠═ba4264eb-66b1-4934-bf0b-de8ce42d162c
 # ╠═fca5f114-f9b3-40a8-9879-1b7b4b3ad62f
+# ╠═232ee913-9c8f-42d4-a570-c8c77c721683
+# ╠═4a2ed650-575a-4cfa-b52a-196b1e55a099
 # ╠═d49d6101-5267-43ea-b6ed-8de2f35557b6
+# ╠═76aca4f9-47da-4065-a55d-f368066d084d
 # ╠═4567b064-7889-419e-b6cd-44c44bcdb305
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
