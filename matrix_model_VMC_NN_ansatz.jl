@@ -86,8 +86,8 @@ end
 
 # ╔═╡ 610b509e-4399-4264-a248-1246ff121cc0
 begin
-    function local_kinetic(ans::Ansatz, a, b, c)
-        x0 = [a, b, c]  # may be Float64 or Dual
+    function local_kinetic(ans::Ansatz, a, b, c, d)
+        x0 = [a, b, c, d]  # may be Float64 or Dual
 
         # f(x) = ½ log|ψ|² at the gauge-fixed coords x = (a,b,c)
         f(x) = begin
@@ -97,10 +97,10 @@ begin
 			X2 = [ zero(x[3])  im * x[3];
                 -im * x[3]  zero(x[3]) ]
 			
-			# X3 = Diagonal([d, -d])      # traceless
+			X3 = Diagonal([d, -d])      # traceless
 			
-			X3 = [ zero(x[1])  zero(x[1]);
-                 zero(x[1])  zero(x[1]) ]
+			# X3 = [ zero(x[1])  zero(x[1]);
+   #               zero(x[1])  zero(x[1]) ]
 			
 			0.5 * logp(ans, X1, X2, X3)
         end
@@ -132,16 +132,17 @@ begin
             X2 = [0     im*c;
                   -im*c  0]
 
-			# X3 = Diagonal([d, -d]) # traceless
+			X3 = Diagonal([d, -d]) # traceless
 			
-            X3 = zeros(2,2)
+            # X3 = zeros(2,2)
 
             # compute ansatz unnormalizaed log-prob and importance weight
             lp = logp(ans, X1, X2, X3)
             w  = exp(lp)
 
             #local energy = kinetic + potential
-            E_loc = local_kinetic(ans, a, b, c) + HB(X1, X2, X3, ν)
+			#set d=0 to remove X3 term
+            E_loc = local_kinetic(ans, a, b, c, d) + HB(X1, X2, X3, ν) 
 			# E_loc = HB(X1, X2, X3, ν)
 			
 			# sum the numerator and denominator of ⟨H⟩ for VMC
@@ -173,7 +174,7 @@ begin
 	full_ans = f64(Ansatz(8))
     ans  = f64(full_ans.net)              # 3→64→64→1 MLP
     ps   = Flux.params(ans)     # collect the arrays inside ans.net
-	epochs = 400
+	epochs = 200
     data = 1:epochs                   # 100 “epochs of training
 
 	losses = Float64[]
@@ -201,7 +202,7 @@ begin
 	end
 
     @info "Final ⟨H⟩ = $(round(energy(full_ans, ν; nsamples=200), digits=4))"
-	println(snapshots)
+	# println(snapshots)
 end
 
 
